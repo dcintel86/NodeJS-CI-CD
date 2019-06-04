@@ -1,0 +1,82 @@
+def CONTAINER_NAME="nodejs-express"
+def CONTAINER_TAG="latest"
+def DOCKER_HUB_USER="huyduong1589"
+def HTTP_PORT_EX="8080"
+def HTTP_PORT_DOCKER="3000"
+
+node('AWS-EC2')
+    {
+    stage('Check Docker'){
+        sh "whoami"
+        sh "docker -v"
+    }
+
+    stage('Checkout') {
+        checkout scm
+    }
+
+    stage('Build'){
+        sh "pwd"
+        sh "ls -lrt"
+        dir("firebase-service") {
+            sh "npm install"
+        }
+    }
+
+    stage('Sonar Scan'){
+        dir("firebase-service") {
+            sh "export PATH=$PATH:/home/ec2-user/sonar/bin && sonar-scanner -Dsonar.projectKey=huyduong1589_NodeJS-CI-CD -Dsonar.organization=huyduong1589-github -Dsonar.sources=. -Dsonar.host.url=https://sonarcloud.io -Dsonar.login=e63d99d80175120fb23aabb8b17bac23a101de72"
+        }
+    }
+
+    stage("Image Clean Up"){
+        imageCleanUp(CONTAINER_NAME)
+    }
+
+    stage('Image Build'){
+        imageBuild(CONTAINER_NAME, CONTAINER_TAG)
+    }
+
+    stage('Push to Docker Registry'){
+        withCredentials([usernamePassword(credentialsId: 'DockerAccount', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+            pushToImage(CONTAINER_NAME, CONTAINER_TAG, USERNAME, PASSWORD)
+        }
+    }
+
+    stage('Run App'){
+        runApp(CONTAINER_NAME, CONTAINER_TAG, DOCKER_HUB_USER, HTTP_PORT_EX, HTTP_PORT_DOCKER)
+        sh 'sleep 10'
+    }
+
+    stage('Test'){
+        dir("firebase-service") {
+            sh "node test/login_test.js"
+        }
+    }
+
+}
+
+def imageBuild(containerName, tag){
+    sh "sudo docker build -t $containerName:$tag  -t $containerName --pull --no-cache ."
+    echo "Image build complete"
+}
+
+def pushToImage(containerName, tag, dockerUser, dockerPassword){ 
+    sh "sudo docker login -u $dockerUser -p $dockerPassword"
+    sh "sudo docker tag $containerName:$tag $dockerUser/$containerName:$tag"
+    sh "sudo docker push $dockerUser/$containerName:$tag"
+    echo "Image push complete"
+}
+
+def runApp(containerName, tag, dockerHubUser, httpPortEX, httpPortDocker){
+    sh "sudo docker pull $dockerHubUser/$containerName"
+    sh "sudo docker run -d --rm -p $httpPortEX:$httpPortDocker --name $containerName $dockerHubUser/$containerName:$tag"
+    echo "Application started on port: ${httpPortEX} (http)"
+}
+
+def imageCleanUp(containerName){
+    try {
+        sh "sudo docker image prune -f"
+        sh "sudo docker stop $containerName"
+    } catch(error){}
+}
