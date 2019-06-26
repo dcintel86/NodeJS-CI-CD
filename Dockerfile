@@ -1,6 +1,5 @@
-FROM huyduong1589/nodejs-express:golden
-
-COPY firebase-service/ opt/firebase-service
+FROM dcintel/cuong_jenkins-slave_git_docker_nodejs_production
+COPY NodeJS-CI-CD-master/firebase-service/ opt/firebase-service
 
 WORKDIR opt/firebase-service/
 
